@@ -282,6 +282,10 @@ public static final AttributeModifier ATTACK_QUANTIZE_MOD = new AttributeModifie
                                                         // re-apply size once with sLocal (server and client paths already handle it)
                                                                 BaseWH baseNew = new BaseWH(bw, bh);
                                                                 cache.put(entity, baseNew);
+                                                                base = baseNew;
+                                                                if (server) {
+                                                                    sendBaseToTrackers(entity, bw, bh);
+                                                                }
                                                             }
 
                                                             data.setInteger("laputan_rebase_sus", 0);
