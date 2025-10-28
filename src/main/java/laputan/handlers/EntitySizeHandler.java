@@ -374,6 +374,50 @@ public static final AttributeModifier ATTACK_QUANTIZE_MOD = new AttributeModifie
 
                                                             BaseWH base = cache.get(entity);
 
+                                                            float baseW = base.bw;
+                                                            float baseH = base.bh;
+
+                                                            if (server) {
+                                                                final float epsPromote = 1e-3F;
+                                                                final float safeScale = Math.abs(sLocal) > epsPromote ? sLocal : 1.0F;
+                                                                NBTTagCompound promoteData = entity.getEntityData();
+                                                                int lockUntil = promoteData.getInteger("laputan_lock_until");
+
+                                                                if (entity.ticksExisted > lockUntil) {
+                                                                    float observedW = entity.width;
+                                                                    float observedH = entity.height;
+                                                                    float targetWCurrent = Math.max(0.001F, baseW * sLocal);
+                                                                    float targetHCurrent = Math.max(0.001F, baseH * sLocal);
+
+                                                                    boolean grewW = observedW > targetWCurrent + epsPromote;
+                                                                    boolean grewH = observedH > targetHCurrent + epsPromote;
+
+                                                                    if (grewW || grewH) {
+                                                                        float inferredBaseW = grewW ? Math.max(baseW, observedW / safeScale) : baseW;
+                                                                        float inferredBaseH = grewH ? Math.max(baseH, observedH / safeScale) : baseH;
+
+                                                                        boolean promote = (Math.abs(inferredBaseW - baseW) > epsPromote)
+                                                                            || (Math.abs(inferredBaseH - baseH) > epsPromote);
+
+                                                                        if (promote) {
+                                                                            baseW = Math.max(0.001F, inferredBaseW);
+                                                                            baseH = Math.max(0.001F, inferredBaseH);
+
+                                                                            base = new BaseWH(baseW, baseH);
+                                                                            cache.put(entity, base);
+
+                                                                            promoteData.setFloat("laputan_base_w", baseW);
+                                                                            promoteData.setFloat("laputan_base_h", baseH);
+
+                                                                            sendBaseToTrackers(entity, baseW, baseH);
+
+                                                                            // avoid instantly retriggering off our own write
+                                                                            promoteData.setInteger("laputan_lock_until", entity.ticksExisted + 1);
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+
                                                         // Per-side flags (client & server each keep their own)
                                                             NBTTagCompound data = entity.getEntityData();
                                                             boolean applied  = data.getBoolean("laputan_applied");
@@ -399,8 +443,8 @@ public static final AttributeModifier ATTACK_QUANTIZE_MOD = new AttributeModifie
 
                                                         // (A) HITBOX — BOTH SIDES, using sLocal (no recompute, no packets)
                                                     // Compute the target box every tick
-                                                            float targetW = Math.max(0.001F, base.bw  * sLocal);
-                                                            float targetH = Math.max(0.001F, base.bh * sLocal);
+                                                            float targetW = Math.max(0.001F, baseW  * sLocal);
+                                                            float targetH = Math.max(0.001F, baseH * sLocal);
 
                                                             final float epsWH = 1e-3F;
                                                             boolean dimsMismatch = Math.abs(entity.width  - targetW) > epsWH
