@@ -383,7 +383,7 @@ public static final AttributeModifier ATTACK_QUANTIZE_MOD = new AttributeModifie
                                                                 NBTTagCompound promoteData = entity.getEntityData();
                                                                 int lockUntil = promoteData.getInteger("laputan_lock_until");
 
-                                                                if (entity.ticksExisted > lockUntil) {
+                                                                if (entity.ticksExisted >= lockUntil) {
                                                                     float observedW = entity.width;
                                                                     float observedH = entity.height;
                                                                     float targetWCurrent = Math.max(0.001F, baseW * sLocal);
