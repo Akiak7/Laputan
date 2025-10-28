@@ -39,13 +39,17 @@
 	                if (!(e0 instanceof EntityLiving)) return;
 	                EntityLiving e = (EntityLiving) e0;
 
-	                // Stamp client-side tags and cache with the server’s canonical base
-	                NBTTagCompound d = e.getEntityData();
-	                d.setFloat("laputan_base_w", msg.baseW);
-	                d.setFloat("laputan_base_h", msg.baseH);
-	                d.setBoolean("laputan_base_child", e.isChild());
+                        // Stamp client-side tags and cache with the server’s canonical base
+                        NBTTagCompound d = e.getEntityData();
+                        d.setFloat("laputan_base_w", msg.baseW);
+                        d.setFloat("laputan_base_h", msg.baseH);
+                        d.setBoolean("laputan_base_child", e.isChild());
+                        d.setBoolean("laputan_pending_child_rebase", false);
+                        d.removeTag("laputan_child_rebase_deadline");
+                        d.removeTag("laputan_child_rebase_prev_w");
+                        d.removeTag("laputan_child_rebase_prev_h");
 
-	                laputan.handlers.EntitySizeHandler.setCachedBase(e, msg.baseW, msg.baseH);
+                        laputan.handlers.EntitySizeHandler.setCachedBase(e, msg.baseW, msg.baseH);
 
 	                // Make sure current AABB matches base × last_scale immediately
 	                float sLocal = d.hasKey("laputan_last_scale") ? d.getFloat("laputan_last_scale") : 1.0F;
