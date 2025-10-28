@@ -50,9 +50,19 @@
                                                         private static final Map<Entity, BaseWH> CACHE_CLIENT = new WeakHashMap<>();
                                                         private static final Map<Entity, BaseWH> CACHE_SERVER = new WeakHashMap<>();
 
-                                                        private static Map<Entity, BaseWH> cacheFor(Entity e) {
-                                                            return (e.world != null && e.world.isRemote) ? CACHE_CLIENT : CACHE_SERVER;
-                                                        }
+    private static Map<Entity, BaseWH> cacheFor(Entity e) {
+        return (e.world != null && e.world.isRemote) ? CACHE_CLIENT : CACHE_SERVER;
+    }
+
+    private static final int REBASE_SUS_TICKS = 5;
+
+    private static boolean isSuspiciousBaseDims(float width, float height) {
+        if (width <= 0.0F || height <= 0.0F) {
+            return true;
+        }
+        final float minNominal = 0.6F;
+        return width < minNominal && height < minNominal;
+    }
 
                                                         private static double fastPowMinus1(double s, double exp) {
                                                         // s^exp - 1 with common branches
@@ -157,11 +167,17 @@ public static final AttributeModifier ATTACK_QUANTIZE_MOD = new AttributeModifie
                                                             EntityLiving entity = (EntityLiving) event.getEntityLiving();
                                                             if (!entity.hasCapability(SizeProvider.sizeCapability, null)) return;
 
-                                                            final boolean server = !entity.world.isRemote;
-                                                            ISizeCapability cap = entity.getCapability(SizeProvider.sizeCapability, null);
-                                                            if (cap == null) return;
+        final boolean server = !entity.world.isRemote;
+        ISizeCapability cap = entity.getCapability(SizeProvider.sizeCapability, null);
+        if (cap == null) return;
 
-                                                            final Map<Entity, BaseWH> cache = cacheFor(entity);
+        NBTTagCompound data = entity.getEntityData();
+        int susCountdown = data.getInteger("laputan_rebase_sus");
+        if (susCountdown > 0) {
+            data.setInteger("laputan_rebase_sus", susCountdown - 1);
+        }
+
+        final Map<Entity, BaseWH> cache = cacheFor(entity);
 
                                                             final EntityLivingBase rider = event.getEntityLiving();
                                                             if (rider.ticksExisted >= 1 &&
@@ -224,67 +240,71 @@ public static final AttributeModifier ATTACK_QUANTIZE_MOD = new AttributeModifie
                                                             : ((sCap > 0F && sCap != 1.0F) ? sCap : EntitySizeUtil.getEntityScale(entity));
 
                                                     // Cache base dims once per side (child -> grown dims)
-                                                            if (!cache.containsKey(entity)) {
-                                                                NBTTagCompound d = entity.getEntityData();
+        if (!cache.containsKey(entity)) {
 
-                                                                if (server) {
-                    // 1) Prefer the canonical base if it already exists (don’t overwrite!)
-                                                                    if (d.hasKey("laputan_base_w") && d.hasKey("laputan_base_h")) {
-                                                                        float bw = d.getFloat("laputan_base_w");
-                                                                        float bh = d.getFloat("laputan_base_h");
-                                                                        cache.put(entity, new BaseWH(bw, bh));
-                        // keep the child flag up to date, but do NOT rewrite bw/bh
-                                                                        d.setBoolean("laputan_base_child", entity.isChild());
-                        // No need to spam trackers; they’ll get base on StartTracking
-                                                                    } else {
-                        // 2) Mint canonical base once if truly missing
-                                                                        float cw = entity.width, ch = entity.height;
-                                                                        float bw = entity.isChild() ? cw * 2F : cw;
-                                                                        float bh = entity.isChild() ? ch * 2F : ch;
+            if (server) {
+// 1) Prefer the canonical base if it already exists (don’t overwrite!)
+                if (data.hasKey("laputan_base_w") && data.hasKey("laputan_base_h")) {
+                    float bw = data.getFloat("laputan_base_w");
+                    float bh = data.getFloat("laputan_base_h");
+                    cache.put(entity, new BaseWH(bw, bh));
+// keep the child flag up to date, but do NOT rewrite bw/bh
+                    data.setBoolean("laputan_base_child", entity.isChild());
+                    data.setInteger("laputan_rebase_sus", 0);
+// No need to spam trackers; they’ll get base on StartTracking
+                } else {
+// 2) Mint canonical base once if truly missing
+                    float cw = entity.width, ch = entity.height;
+                    if (isSuspiciousBaseDims(cw, ch)) {
+                        int susTicks = Math.max(data.getInteger("laputan_rebase_sus"), REBASE_SUS_TICKS);
+                        data.setInteger("laputan_rebase_sus", susTicks);
+                        return;
+                    }
 
-                                                                        cache.put(entity, new BaseWH(bw, bh));
-                                                                        d.setFloat("laputan_base_w", bw);
-                                                                        d.setFloat("laputan_base_h", bh);
-                                                                        d.setBoolean("laputan_base_child", entity.isChild());
+                    float bw = entity.isChild() ? cw * 2F : cw;
+                    float bh = entity.isChild() ? ch * 2F : ch;
 
-                        // Tell current trackers the canonical base we just minted
-                                                                        sendBaseToTrackers(entity, bw, bh);
-                                                                    }
-                                                                } else {
-                    // Client: only adopt if the server already told us the base
-                                                                    if (d.hasKey("laputan_base_w") && d.hasKey("laputan_base_h")) {
-                                                                        cache.put(entity, new BaseWH(d.getFloat("laputan_base_w"), d.getFloat("laputan_base_h")));
-                                                                    } else {
-                        // No canonical base yet — do NOT size this tick
-                                                                        return;
-                                                                    }
-                                                                }
-                                                            }
+                    cache.put(entity, new BaseWH(bw, bh));
+                    data.setFloat("laputan_base_w", bw);
+                    data.setFloat("laputan_base_h", bh);
+                    data.setBoolean("laputan_base_child", entity.isChild());
 
-                                                            BaseWH base = cache.get(entity);
+// Tell current trackers the canonical base we just minted
+                    sendBaseToTrackers(entity, bw, bh);
+                    data.setInteger("laputan_rebase_sus", 0);
+                }
+            } else {
+// Client: only adopt if the server already told us the base
+                if (data.hasKey("laputan_base_w") && data.hasKey("laputan_base_h")) {
+                    cache.put(entity, new BaseWH(data.getFloat("laputan_base_w"), data.getFloat("laputan_base_h")));
+                } else {
+// No canonical base yet — do NOT size this tick
+                    return;
+                }
+            }
+        }
 
-                                                        // Per-side flags (client & server each keep their own)
-                                                            NBTTagCompound data = entity.getEntityData();
+        BaseWH base = cache.get(entity);
+
+// Per-side flags (client & server each keep their own)
                                                             boolean applied  = data.getBoolean("laputan_applied");
                                                             float lastScale  = data.hasKey("laputan_last_scale") ? data.getFloat("laputan_last_scale") : 0F;
                                                             boolean sizeChangedNow = false;
                                                             boolean wasChild = data.getBoolean("laputan_base_child");
                                                             boolean isChild  = entity.isChild();
-                                                            if (wasChild != isChild) {
-                                                                float bw = isChild ? entity.width * 2F : entity.width;
-                                                                float bh = isChild ? entity.height * 2F : entity.height;
-                                                                data.setFloat("laputan_base_w", bw);
-                                                                data.setFloat("laputan_base_h", bh);
-                                                                data.setBoolean("laputan_base_child", isChild);
-                                                                if (!data.hasKey("laputan_base_step")) {
-                                                                    data.setFloat("laputan_base_step", entity.stepHeight);
-                                                                }
-                                                        // re-apply size once with sLocal (server and client paths already handle it)
-                                                                BaseWH baseNew = new BaseWH(bw, bh);
-                                                                cache.put(entity, baseNew);
-                                                            }
-
-                                                            data.setInteger("laputan_rebase_sus", 0);
+        if (wasChild != isChild) {
+            float bw = isChild ? entity.width * 2F : entity.width;
+            float bh = isChild ? entity.height * 2F : entity.height;
+            data.setFloat("laputan_base_w", bw);
+            data.setFloat("laputan_base_h", bh);
+            data.setBoolean("laputan_base_child", isChild);
+            if (!data.hasKey("laputan_base_step")) {
+                data.setFloat("laputan_base_step", entity.stepHeight);
+            }
+// re-apply size once with sLocal (server and client paths already handle it)
+            BaseWH baseNew = new BaseWH(bw, bh);
+            cache.put(entity, baseNew);
+        }
 
                                                         // (A) HITBOX — BOTH SIDES, using sLocal (no recompute, no packets)
                                                     // Compute the target box every tick
@@ -710,18 +730,30 @@ public static void onStartTracking(net.minecraftforge.event.entity.player.Player
 
                     // base (compute once if missing)
     NBTTagCompound d = e.getEntityData();
-    if (!d.hasKey("laputan_base_w") || !d.hasKey("laputan_base_h")) {
+    boolean hasBase = d.hasKey("laputan_base_w") && d.hasKey("laputan_base_h");
+    if (!hasBase) {
         float cw = e.width, ch = e.height;
+        if (isSuspiciousBaseDims(cw, ch)) {
+            int susTicks = Math.max(d.getInteger("laputan_rebase_sus"), REBASE_SUS_TICKS);
+            d.setInteger("laputan_rebase_sus", susTicks);
+            return;
+        }
+
         float bw = e.isChild() ? cw * 2F : cw;
         float bh = e.isChild() ? ch * 2F : ch;
         d.setFloat("laputan_base_w", bw);
         d.setFloat("laputan_base_h", bh);
         d.setBoolean("laputan_base_child", e.isChild());
+        d.setInteger("laputan_rebase_sus", 0);
+        hasBase = true;
     }
-    PacketHandler.INSTANCE.sendTo(
-        new MessageSizeBase(e.getEntityId(), d.getFloat("laputan_base_w"), d.getFloat("laputan_base_h")),
-        (EntityPlayerMP) ev.getEntityPlayer()
-    );
+
+    if (hasBase) {
+        PacketHandler.INSTANCE.sendTo(
+            new MessageSizeBase(e.getEntityId(), d.getFloat("laputan_base_w"), d.getFloat("laputan_base_h")),
+            (EntityPlayerMP) ev.getEntityPlayer()
+        );
+    }
 }
 
 
