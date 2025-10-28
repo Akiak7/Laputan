@@ -268,25 +268,51 @@ public static final AttributeModifier ATTACK_QUANTIZE_MOD = new AttributeModifie
                                                             boolean applied  = data.getBoolean("laputan_applied");
                                                             float lastScale  = data.hasKey("laputan_last_scale") ? data.getFloat("laputan_last_scale") : 0F;
                                                             boolean sizeChangedNow = false;
-                                                            boolean wasChild = data.getBoolean("laputan_base_child");
-                                                            boolean isChild  = entity.isChild();
-                                                            if (wasChild != isChild) {
-                                                                float bw = isChild ? entity.width * 2F : entity.width;
-                                                                float bh = isChild ? entity.height * 2F : entity.height;
-                                                                data.setFloat("laputan_base_w", bw);
-                                                                data.setFloat("laputan_base_h", bh);
-                                                                data.setBoolean("laputan_base_child", isChild);
-                                                                if (!data.hasKey("laputan_base_step")) {
-                                                                    data.setFloat("laputan_base_step", entity.stepHeight);
-                                                                }
-                                                        // re-apply size once with sLocal (server and client paths already handle it)
-                                                                BaseWH baseNew = new BaseWH(bw, bh);
-                                                                cache.put(entity, baseNew);
-                                                                base = baseNew;
-                                                                if (server) {
-                                                                    sendBaseToTrackers(entity, bw, bh);
-                                                                }
-                                                            }
+                    boolean wasChild = data.getBoolean("laputan_base_child");
+                    boolean isChild  = entity.isChild();
+                    boolean pendingChildRebase = data.getBoolean("laputan_pending_child_rebase");
+                    if (wasChild != isChild) {
+                        data.setBoolean("laputan_base_child", isChild);
+                        if (!data.hasKey("laputan_base_step")) {
+                            data.setFloat("laputan_base_step", entity.stepHeight);
+                        }
+                        pendingChildRebase = true;
+                        data.setBoolean("laputan_pending_child_rebase", true);
+                        data.setInteger("laputan_child_rebase_deadline", entity.ticksExisted + 20);
+                    }
+
+                    boolean skipSizingThisTick = false;
+                    if (pendingChildRebase) {
+                        final float epsAdopt = 1.0e-3F;
+                        final float expectedW = Math.max(0.001F, base.bw * sLocal);
+                        final float expectedH = Math.max(0.001F, base.bh * sLocal);
+                        final float actualW = Math.max(0.001F, entity.width);
+                        final float actualH = Math.max(0.001F, entity.height);
+                        final float candidateBw = isChild ? actualW * 2F : actualW;
+                        final float candidateBh = isChild ? actualH * 2F : actualH;
+                        final int deadline = data.hasKey("laputan_child_rebase_deadline")
+                            ? data.getInteger("laputan_child_rebase_deadline")
+                            : 0;
+
+                        boolean adoptNow = Math.abs(actualW - expectedW) > epsAdopt
+                            || Math.abs(actualH - expectedH) > epsAdopt
+                            || entity.ticksExisted >= deadline;
+
+                        if (adoptNow) {
+                            BaseWH baseNew = new BaseWH(candidateBw, candidateBh);
+                            cache.put(entity, baseNew);
+                            base = baseNew;
+                            data.setFloat("laputan_base_w", candidateBw);
+                            data.setFloat("laputan_base_h", candidateBh);
+                            data.setBoolean("laputan_pending_child_rebase", false);
+                            data.removeTag("laputan_child_rebase_deadline");
+                            if (server) {
+                                sendBaseToTrackers(entity, candidateBw, candidateBh);
+                            }
+                        } else {
+                            skipSizingThisTick = true;
+                        }
+                    }
 
                                                             data.setInteger("laputan_rebase_sus", 0);
 
@@ -299,7 +325,7 @@ public static final AttributeModifier ATTACK_QUANTIZE_MOD = new AttributeModifie
                                                             boolean dimsMismatch = Math.abs(entity.width  - targetW) > epsWH
                                                             || Math.abs(entity.height - targetH) > epsWH;
 
-                                                            if (!applied || Math.abs(lastScale - sLocal) > 1e-3F || dimsMismatch) {
+                    if (!skipSizingThisTick && (!applied || Math.abs(lastScale - sLocal) > 1e-3F || dimsMismatch)) {
                                                         setEntitySize(entity, targetW, targetH);    // feet-pinned version
                                                         data.setBoolean("laputan_applied", true);
                                                         data.setFloat("laputan_last_scale", sLocal);
