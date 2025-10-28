@@ -1,0 +1,16 @@
+[
+{
+  "modid": "laputan",
+  "name": "Laputan",
+  "description": "Allows mobs to spawn with gaussian sizes",
+  "version": "${version}",
+  "mcversion": "${mcversion}",
+  "url": "",
+  "updateUrl": "",
+  "authorList": ["akiak"],
+  "credits": "original by mangoose",
+  "logoFile": "",
+  "screenshots": [],
+  "dependencies": []
+}
+]
