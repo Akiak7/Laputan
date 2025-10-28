@@ -227,30 +227,141 @@ public static final AttributeModifier ATTACK_QUANTIZE_MOD = new AttributeModifie
                                                             if (!cache.containsKey(entity)) {
                                                                 NBTTagCompound d = entity.getEntityData();
 
-                                                                if (server) {
+                if (server) {
                     // 1) Prefer the canonical base if it already exists (don’t overwrite!)
-                                                                    if (d.hasKey("laputan_base_w") && d.hasKey("laputan_base_h")) {
-                                                                        float bw = d.getFloat("laputan_base_w");
-                                                                        float bh = d.getFloat("laputan_base_h");
-                                                                        cache.put(entity, new BaseWH(bw, bh));
+                    if (d.hasKey("laputan_base_w") && d.hasKey("laputan_base_h")) {
+                        float bw = d.getFloat("laputan_base_w");
+                        float bh = d.getFloat("laputan_base_h");
+                        cache.put(entity, new BaseWH(bw, bh));
                         // keep the child flag up to date, but do NOT rewrite bw/bh
-                                                                        d.setBoolean("laputan_base_child", entity.isChild());
+                        d.setBoolean("laputan_base_child", entity.isChild());
+                        // Clear any provisional state that might linger
+                        d.removeTag("laputan_pending_base_w");
+                        d.removeTag("laputan_pending_base_h");
+                        d.removeTag("laputan_pending_base_stable");
+                        d.removeTag("laputan_pending_base_first_tick");
+                        d.removeTag("laputan_pending_base_seen_change");
+                        d.removeTag("laputan_pending_base_saw_increase_w");
+                        d.removeTag("laputan_pending_base_saw_increase_h");
+                        d.removeTag("laputan_pending_base_max_w");
+                        d.removeTag("laputan_pending_base_max_h");
                         // No need to spam trackers; they’ll get base on StartTracking
-                                                                    } else {
-                        // 2) Mint canonical base once if truly missing
-                                                                        float cw = entity.width, ch = entity.height;
-                                                                        float bw = entity.isChild() ? cw * 2F : cw;
-                                                                        float bh = entity.isChild() ? ch * 2F : ch;
+                    } else {
+                        // 2) Mint canonical base once if truly missing — wait for a stable provisional value first
+                        final float cw = entity.width, ch = entity.height;
+                        final float bw = entity.isChild() ? cw * 2F : cw;
+                        final float bh = entity.isChild() ? ch * 2F : ch;
+                        final float epsPending = 1e-3F;
+                        final int minPendingTicks = 40; // ~2s grace to let mobs finish inflating
 
-                                                                        cache.put(entity, new BaseWH(bw, bh));
-                                                                        d.setFloat("laputan_base_w", bw);
-                                                                        d.setFloat("laputan_base_h", bh);
-                                                                        d.setBoolean("laputan_base_child", entity.isChild());
+                        boolean hasPending = d.hasKey("laputan_pending_base_w") && d.hasKey("laputan_pending_base_h");
+
+                        if (!hasPending) {
+                            d.setFloat("laputan_pending_base_w", bw);
+                            d.setFloat("laputan_pending_base_h", bh);
+                            d.setInteger("laputan_pending_base_stable", 0);
+                            d.setInteger("laputan_pending_base_first_tick", entity.ticksExisted);
+                            d.setBoolean("laputan_pending_base_seen_change", false);
+                            d.setBoolean("laputan_pending_base_saw_increase_w", false);
+                            d.setBoolean("laputan_pending_base_saw_increase_h", false);
+                            d.setFloat("laputan_pending_base_max_w", bw);
+                            d.setFloat("laputan_pending_base_max_h", bh);
+                            return;
+                        }
+
+                        float pendingW = d.getFloat("laputan_pending_base_w");
+                        float pendingH = d.getFloat("laputan_pending_base_h");
+                        int stableTicks = d.getInteger("laputan_pending_base_stable");
+                        int firstTick = d.hasKey("laputan_pending_base_first_tick")
+                            ? d.getInteger("laputan_pending_base_first_tick")
+                            : entity.ticksExisted;
+                        boolean seenChange = d.getBoolean("laputan_pending_base_seen_change");
+                        boolean sawIncreaseW = d.getBoolean("laputan_pending_base_saw_increase_w");
+                        boolean sawIncreaseH = d.getBoolean("laputan_pending_base_saw_increase_h");
+                        float maxW = d.hasKey("laputan_pending_base_max_w")
+                            ? d.getFloat("laputan_pending_base_max_w")
+                            : pendingW;
+                        float maxH = d.hasKey("laputan_pending_base_max_h")
+                            ? d.getFloat("laputan_pending_base_max_h")
+                            : pendingH;
+
+                        boolean changedThisTick = Math.abs(pendingW - bw) > epsPending
+                            || Math.abs(pendingH - bh) > epsPending;
+
+                        if (bw > maxW + epsPending) {
+                            maxW = bw;
+                            if (entity.ticksExisted > firstTick) {
+                                sawIncreaseW = true;
+                            }
+                            d.setFloat("laputan_pending_base_max_w", maxW);
+                        }
+
+                        if (bh > maxH + epsPending) {
+                            maxH = bh;
+                            if (entity.ticksExisted > firstTick) {
+                                sawIncreaseH = true;
+                            }
+                            d.setFloat("laputan_pending_base_max_h", maxH);
+                        }
+
+                        if (sawIncreaseW || sawIncreaseH) {
+                            seenChange = true;
+                        }
+
+                        if (changedThisTick) {
+                            d.setFloat("laputan_pending_base_w", bw);
+                            d.setFloat("laputan_pending_base_h", bh);
+                            d.setInteger("laputan_pending_base_stable", 0);
+                            if (entity.ticksExisted > firstTick) {
+                                seenChange = true;
+                            }
+                            d.setBoolean("laputan_pending_base_seen_change", seenChange);
+                            d.setBoolean("laputan_pending_base_saw_increase_w", sawIncreaseW);
+                            d.setBoolean("laputan_pending_base_saw_increase_h", sawIncreaseH);
+                            return;
+                        }
+
+                        stableTicks++;
+                        d.setInteger("laputan_pending_base_stable", stableTicks);
+                        d.setBoolean("laputan_pending_base_seen_change", seenChange);
+                        d.setBoolean("laputan_pending_base_saw_increase_w", sawIncreaseW);
+                        d.setBoolean("laputan_pending_base_saw_increase_h", sawIncreaseH);
+
+                        int lockUntil = d.getInteger("laputan_lock_until");
+                        int observedTicks = entity.ticksExisted - firstTick;
+                        boolean allowByTimeout = observedTicks >= minPendingTicks;
+                        boolean allowByChange = seenChange;
+
+                        if (stableTicks < 1 || entity.ticksExisted <= lockUntil) {
+                            return;
+                        }
+
+                        if (!allowByTimeout && !allowByChange) {
+                            return;
+                        }
+
+                        float mintedW = sawIncreaseW ? Math.max(bw, maxW) : bw;
+                        float mintedH = sawIncreaseH ? Math.max(bh, maxH) : bh;
+
+                        cache.put(entity, new BaseWH(mintedW, mintedH));
+                        d.setFloat("laputan_base_w", mintedW);
+                        d.setFloat("laputan_base_h", mintedH);
+                        d.setBoolean("laputan_base_child", entity.isChild());
 
                         // Tell current trackers the canonical base we just minted
-                                                                        sendBaseToTrackers(entity, bw, bh);
-                                                                    }
-                                                                } else {
+                        sendBaseToTrackers(entity, mintedW, mintedH);
+
+                        d.removeTag("laputan_pending_base_w");
+                        d.removeTag("laputan_pending_base_h");
+                        d.removeTag("laputan_pending_base_stable");
+                        d.removeTag("laputan_pending_base_first_tick");
+                        d.removeTag("laputan_pending_base_seen_change");
+                        d.removeTag("laputan_pending_base_saw_increase_w");
+                        d.removeTag("laputan_pending_base_saw_increase_h");
+                        d.removeTag("laputan_pending_base_max_w");
+                        d.removeTag("laputan_pending_base_max_h");
+                    }
+                } else {
                     // Client: only adopt if the server already told us the base
                                                                     if (d.hasKey("laputan_base_w") && d.hasKey("laputan_base_h")) {
                                                                         cache.put(entity, new BaseWH(d.getFloat("laputan_base_w"), d.getFloat("laputan_base_h")));
