@@ -227,30 +227,85 @@ public static final AttributeModifier ATTACK_QUANTIZE_MOD = new AttributeModifie
                                                             if (!cache.containsKey(entity)) {
                                                                 NBTTagCompound d = entity.getEntityData();
 
-                                                                if (server) {
+                if (server) {
                     // 1) Prefer the canonical base if it already exists (don’t overwrite!)
-                                                                    if (d.hasKey("laputan_base_w") && d.hasKey("laputan_base_h")) {
-                                                                        float bw = d.getFloat("laputan_base_w");
-                                                                        float bh = d.getFloat("laputan_base_h");
-                                                                        cache.put(entity, new BaseWH(bw, bh));
+                    if (d.hasKey("laputan_base_w") && d.hasKey("laputan_base_h")) {
+                        float bw = d.getFloat("laputan_base_w");
+                        float bh = d.getFloat("laputan_base_h");
+                        cache.put(entity, new BaseWH(bw, bh));
                         // keep the child flag up to date, but do NOT rewrite bw/bh
-                                                                        d.setBoolean("laputan_base_child", entity.isChild());
+                        d.setBoolean("laputan_base_child", entity.isChild());
+                        // Clear any provisional state that might linger
+                        d.removeTag("laputan_pending_base_w");
+                        d.removeTag("laputan_pending_base_h");
+                        d.removeTag("laputan_pending_base_stable");
                         // No need to spam trackers; they’ll get base on StartTracking
-                                                                    } else {
-                        // 2) Mint canonical base once if truly missing
-                                                                        float cw = entity.width, ch = entity.height;
-                                                                        float bw = entity.isChild() ? cw * 2F : cw;
-                                                                        float bh = entity.isChild() ? ch * 2F : ch;
+                    } else {
+                        // 2) Mint canonical base once if truly missing — wait for a stable provisional value first
+                        final float cw = entity.width, ch = entity.height;
+                        final float bw = entity.isChild() ? cw * 2F : cw;
+                        final float bh = entity.isChild() ? ch * 2F : ch;
+                        final float epsPending = 1e-3F;
 
-                                                                        cache.put(entity, new BaseWH(bw, bh));
-                                                                        d.setFloat("laputan_base_w", bw);
-                                                                        d.setFloat("laputan_base_h", bh);
-                                                                        d.setBoolean("laputan_base_child", entity.isChild());
+                        boolean hasPending = d.hasKey("laputan_pending_base_w") && d.hasKey("laputan_pending_base_h");
+
+                        if (!hasPending) {
+                            d.setFloat("laputan_pending_base_w", bw);
+                            d.setFloat("laputan_pending_base_h", bh);
+                            d.setInteger("laputan_pending_base_stable", 0);
+                            d.removeTag("laputan_lock_until");
+                            d.removeTag("laputan_lock_origin");
+                            return;
+                        }
+
+                        float pendingW = d.getFloat("laputan_pending_base_w");
+                        float pendingH = d.getFloat("laputan_pending_base_h");
+                        int stableTicks = d.getInteger("laputan_pending_base_stable");
+
+                        if (Math.abs(pendingW - bw) > epsPending || Math.abs(pendingH - bh) > epsPending) {
+                            d.setFloat("laputan_pending_base_w", bw);
+                            d.setFloat("laputan_pending_base_h", bh);
+                            d.setInteger("laputan_pending_base_stable", 0);
+                            d.removeTag("laputan_lock_until");
+                            d.removeTag("laputan_lock_origin");
+                            return;
+                        }
+
+                        stableTicks++;
+                        d.setInteger("laputan_pending_base_stable", stableTicks);
+
+                        int lockUntil = d.getInteger("laputan_lock_until");
+                        if (lockUntil > 0) {
+                            int lockOrigin = d.getInteger("laputan_lock_origin");
+                            if (entity.ticksExisted < lockOrigin) {
+                                d.removeTag("laputan_lock_until");
+                                d.removeTag("laputan_lock_origin");
+                            } else if (entity.ticksExisted <= lockUntil) {
+                                return;
+                            } else {
+                                d.removeTag("laputan_lock_until");
+                                d.removeTag("laputan_lock_origin");
+                            }
+                        }
+                        if (stableTicks < 1) {
+                            return;
+                        }
+
+                        cache.put(entity, new BaseWH(bw, bh));
+                        d.setFloat("laputan_base_w", bw);
+                        d.setFloat("laputan_base_h", bh);
+                        d.setBoolean("laputan_base_child", entity.isChild());
 
                         // Tell current trackers the canonical base we just minted
-                                                                        sendBaseToTrackers(entity, bw, bh);
-                                                                    }
-                                                                } else {
+                        sendBaseToTrackers(entity, bw, bh);
+
+                        d.removeTag("laputan_pending_base_w");
+                        d.removeTag("laputan_pending_base_h");
+                        d.removeTag("laputan_pending_base_stable");
+                        d.removeTag("laputan_lock_until");
+                        d.removeTag("laputan_lock_origin");
+                    }
+                } else {
                     // Client: only adopt if the server already told us the base
                                                                     if (d.hasKey("laputan_base_w") && d.hasKey("laputan_base_h")) {
                                                                         cache.put(entity, new BaseWH(d.getFloat("laputan_base_w"), d.getFloat("laputan_base_h")));
@@ -302,7 +357,8 @@ public static final AttributeModifier ATTACK_QUANTIZE_MOD = new AttributeModifie
                                                         sizeChangedNow = true;
 
                                                         // NEW – 1-tick lock to avoid immediately rebasing off our own write
-                                                        data.setInteger("laputan_lock_until", entity.ticksExisted + 1);
+                                                    data.setInteger("laputan_lock_until", entity.ticksExisted + 1);
+                                                    data.setInteger("laputan_lock_origin", entity.ticksExisted);
 
                                                     }
 
