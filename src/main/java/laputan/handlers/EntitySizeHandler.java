@@ -271,17 +271,37 @@ public static final AttributeModifier ATTACK_QUANTIZE_MOD = new AttributeModifie
                                                             boolean wasChild = data.getBoolean("laputan_base_child");
                                                             boolean isChild  = entity.isChild();
                                                             if (wasChild != isChild) {
-                                                                float bw = isChild ? entity.width * 2F : entity.width;
-                                                                float bh = isChild ? entity.height * 2F : entity.height;
+                                                                final float prevFactor = wasChild ? 0.5F : 1.0F;
+                                                                final float expectedPrevW = base.bw * sLocal * prevFactor;
+                                                                final float expectedPrevH = base.bh * sLocal * prevFactor;
+
+                                                                final float actualW = entity.width;
+                                                                final float actualH = entity.height;
+
+                                                                final boolean externalDimsChange =
+                                                                    Math.abs(actualW - expectedPrevW) > 1.0e-3F ||
+                                                                    Math.abs(actualH - expectedPrevH) > 1.0e-3F;
+
+                                                                float bw = base.bw;
+                                                                float bh = base.bh;
+
+                                                                if (externalDimsChange) {
+                                                                    final float nextFactor = isChild ? 0.5F : 1.0F;
+                                                                    final float invScale = (sLocal > 1.0e-6F) ? (1.0F / sLocal) : 1.0F;
+                                                                    bw = Math.max(0.001F, actualW * invScale / nextFactor);
+                                                                    bh = Math.max(0.001F, actualH * invScale / nextFactor);
+                                                                }
+
                                                                 data.setFloat("laputan_base_w", bw);
                                                                 data.setFloat("laputan_base_h", bh);
                                                                 data.setBoolean("laputan_base_child", isChild);
                                                                 if (!data.hasKey("laputan_base_step")) {
                                                                     data.setFloat("laputan_base_step", entity.stepHeight);
                                                                 }
-                                                        // re-apply size once with sLocal (server and client paths already handle it)
+                                                                // re-apply size once with sLocal (server and client paths already handle it)
                                                                 BaseWH baseNew = new BaseWH(bw, bh);
                                                                 cache.put(entity, baseNew);
+                                                                base = baseNew;
                                                             }
 
                                                             data.setInteger("laputan_rebase_sus", 0);
