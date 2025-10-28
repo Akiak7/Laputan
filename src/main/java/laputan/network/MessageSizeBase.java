@@ -46,6 +46,8 @@
                         d.setBoolean("laputan_base_child", e.isChild());
                         d.setBoolean("laputan_pending_child_rebase", false);
                         d.removeTag("laputan_child_rebase_deadline");
+                        d.removeTag("laputan_child_rebase_prev_w");
+                        d.removeTag("laputan_child_rebase_prev_h");
 
                         laputan.handlers.EntitySizeHandler.setCachedBase(e, msg.baseW, msg.baseH);
 

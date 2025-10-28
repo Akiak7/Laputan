@@ -279,6 +279,8 @@ public static final AttributeModifier ATTACK_QUANTIZE_MOD = new AttributeModifie
                         pendingChildRebase = true;
                         data.setBoolean("laputan_pending_child_rebase", true);
                         data.setInteger("laputan_child_rebase_deadline", entity.ticksExisted + 20);
+                        data.setFloat("laputan_child_rebase_prev_w", Math.max(0.001F, entity.width));
+                        data.setFloat("laputan_child_rebase_prev_h", Math.max(0.001F, entity.height));
                     }
 
                     boolean skipSizingThisTick = false;
@@ -288,15 +290,21 @@ public static final AttributeModifier ATTACK_QUANTIZE_MOD = new AttributeModifie
                         final float expectedH = Math.max(0.001F, base.bh * sLocal);
                         final float actualW = Math.max(0.001F, entity.width);
                         final float actualH = Math.max(0.001F, entity.height);
+                        final float prevW = data.hasKey("laputan_child_rebase_prev_w")
+                            ? Math.max(0.001F, data.getFloat("laputan_child_rebase_prev_w"))
+                            : expectedW;
+                        final float prevH = data.hasKey("laputan_child_rebase_prev_h")
+                            ? Math.max(0.001F, data.getFloat("laputan_child_rebase_prev_h"))
+                            : expectedH;
                         final float candidateBw = isChild ? actualW * 2F : actualW;
                         final float candidateBh = isChild ? actualH * 2F : actualH;
                         final int deadline = data.hasKey("laputan_child_rebase_deadline")
                             ? data.getInteger("laputan_child_rebase_deadline")
                             : 0;
 
-                        boolean adoptNow = Math.abs(actualW - expectedW) > epsAdopt
-                            || Math.abs(actualH - expectedH) > epsAdopt
-                            || entity.ticksExisted >= deadline;
+                        boolean vanillaChanged = Math.abs(actualW - prevW) > epsAdopt
+                            || Math.abs(actualH - prevH) > epsAdopt;
+                        boolean adoptNow = vanillaChanged || entity.ticksExisted >= deadline;
 
                         if (adoptNow) {
                             BaseWH baseNew = new BaseWH(candidateBw, candidateBh);
@@ -306,6 +314,8 @@ public static final AttributeModifier ATTACK_QUANTIZE_MOD = new AttributeModifie
                             data.setFloat("laputan_base_h", candidateBh);
                             data.setBoolean("laputan_pending_child_rebase", false);
                             data.removeTag("laputan_child_rebase_deadline");
+                            data.removeTag("laputan_child_rebase_prev_w");
+                            data.removeTag("laputan_child_rebase_prev_h");
                             if (server) {
                                 sendBaseToTrackers(entity, candidateBw, candidateBh);
                             }
