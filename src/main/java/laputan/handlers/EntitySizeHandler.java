@@ -56,12 +56,22 @@
 
     private static final int REBASE_SUS_TICKS = 5;
 
-    private static boolean isSuspiciousBaseDims(float width, float height) {
+    private static boolean isSuspiciousBaseDims(EntityLiving entity, float width, float height) {
         if (width <= 0.0F || height <= 0.0F) {
             return true;
         }
+
+        final float nearZero = 1.0e-3F;
+        if (width <= nearZero || height <= nearZero) {
+            return true;
+        }
+
         final float minNominal = 0.6F;
-        return width < minNominal && height < minNominal;
+        if (width < minNominal && height < minNominal) {
+            return entity.ticksExisted < REBASE_SUS_TICKS;
+        }
+
+        return false;
     }
 
                                                         private static double fastPowMinus1(double s, double exp) {
@@ -255,7 +265,7 @@ public static final AttributeModifier ATTACK_QUANTIZE_MOD = new AttributeModifie
                 } else {
 // 2) Mint canonical base once if truly missing
                     float cw = entity.width, ch = entity.height;
-                    if (isSuspiciousBaseDims(cw, ch)) {
+                    if (isSuspiciousBaseDims(entity, cw, ch)) {
                         int susTicks = Math.max(data.getInteger("laputan_rebase_sus"), REBASE_SUS_TICKS);
                         data.setInteger("laputan_rebase_sus", susTicks);
                         return;
@@ -733,7 +743,7 @@ public static void onStartTracking(net.minecraftforge.event.entity.player.Player
     boolean hasBase = d.hasKey("laputan_base_w") && d.hasKey("laputan_base_h");
     if (!hasBase) {
         float cw = e.width, ch = e.height;
-        if (isSuspiciousBaseDims(cw, ch)) {
+        if (isSuspiciousBaseDims(e, cw, ch)) {
             int susTicks = Math.max(d.getInteger("laputan_rebase_sus"), REBASE_SUS_TICKS);
             d.setInteger("laputan_rebase_sus", susTicks);
             return;
