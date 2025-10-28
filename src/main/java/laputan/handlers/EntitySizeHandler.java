@@ -253,6 +253,8 @@ public static final AttributeModifier ATTACK_QUANTIZE_MOD = new AttributeModifie
                             d.setFloat("laputan_pending_base_w", bw);
                             d.setFloat("laputan_pending_base_h", bh);
                             d.setInteger("laputan_pending_base_stable", 0);
+                            d.removeTag("laputan_lock_until");
+                            d.removeTag("laputan_lock_origin");
                             return;
                         }
 
@@ -264,6 +266,8 @@ public static final AttributeModifier ATTACK_QUANTIZE_MOD = new AttributeModifie
                             d.setFloat("laputan_pending_base_w", bw);
                             d.setFloat("laputan_pending_base_h", bh);
                             d.setInteger("laputan_pending_base_stable", 0);
+                            d.removeTag("laputan_lock_until");
+                            d.removeTag("laputan_lock_origin");
                             return;
                         }
 
@@ -271,7 +275,19 @@ public static final AttributeModifier ATTACK_QUANTIZE_MOD = new AttributeModifie
                         d.setInteger("laputan_pending_base_stable", stableTicks);
 
                         int lockUntil = d.getInteger("laputan_lock_until");
-                        if (stableTicks < 1 || entity.ticksExisted <= lockUntil) {
+                        if (lockUntil > 0) {
+                            int lockOrigin = d.getInteger("laputan_lock_origin");
+                            if (entity.ticksExisted < lockOrigin) {
+                                d.removeTag("laputan_lock_until");
+                                d.removeTag("laputan_lock_origin");
+                            } else if (entity.ticksExisted <= lockUntil) {
+                                return;
+                            } else {
+                                d.removeTag("laputan_lock_until");
+                                d.removeTag("laputan_lock_origin");
+                            }
+                        }
+                        if (stableTicks < 1) {
                             return;
                         }
 
@@ -286,6 +302,8 @@ public static final AttributeModifier ATTACK_QUANTIZE_MOD = new AttributeModifie
                         d.removeTag("laputan_pending_base_w");
                         d.removeTag("laputan_pending_base_h");
                         d.removeTag("laputan_pending_base_stable");
+                        d.removeTag("laputan_lock_until");
+                        d.removeTag("laputan_lock_origin");
                     }
                 } else {
                     // Client: only adopt if the server already told us the base
@@ -339,7 +357,8 @@ public static final AttributeModifier ATTACK_QUANTIZE_MOD = new AttributeModifie
                                                         sizeChangedNow = true;
 
                                                         // NEW – 1-tick lock to avoid immediately rebasing off our own write
-                                                        data.setInteger("laputan_lock_until", entity.ticksExisted + 1);
+                                                    data.setInteger("laputan_lock_until", entity.ticksExisted + 1);
+                                                    data.setInteger("laputan_lock_origin", entity.ticksExisted);
 
                                                     }
 
